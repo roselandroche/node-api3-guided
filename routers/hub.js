@@ -1,6 +1,7 @@
 const express = require("express")
 const messageRouter = require("./message")
 const hubs = require("../hubs/hubs-model.js")
+const { validateHubId, validateHubData } = require("../middleware/validate")
 
 // Creates a new router, or "sub-application" within our app
 // Routers can have their own endpoints, middleware, etc.
@@ -25,82 +26,50 @@ router.get("/", (req, res) => {
       res.status(200).json(hubs)
     })
     .catch(error => {
-      console.log(error)
-      res.status(500).json({
-        message: "Error retrieving the hubs",
-      })
+      // can now send errors directly through to the
+      // error handler, rather than handling each error
+      // individually
+      next(error)
     })
 })
 
-router.get("/:id", (req, res) => {
-  hubs.findById(req.params.id)
-    .then(hub => {
-      if (hub) {
-        res.status(200).json(hub)
-      } else {
-        res.status(404).json({ message: "Hub not found" })
-      }
-    })
-    .catch(error => {
-      console.log(error)
-      res.status(500).json({
-        message: "Error retrieving the hub",
-      })
-    })
+router.get("/:id", validateHubId(), (req, res) => {
+  // since middleware builds off of each other,
+  // we can attach values to the request from a middleware
+  // function, and use the values in later middleware functions.
+  // (req.hub is attached in `validateHubId`)
+  res.json(req.hub)
 })
 
-router.post("/", (req, res) => {
-  if (!req.body.name) {
-    return res.status(400).json({ message: "Missing hub name" })
+router.post("/", validateHubData(), async (req, res) => {
+  try {
+    const hub = await hubs.add(req.body)
+    res.status(201).json(hub)
+  } catch(err) {
+    next(err)
   }
+})
 
-  hubs.add(req.body)
+// just like defining global middleware with `server.use`, we can
+// define middleware for specific routes by chaining them together
+// like this. We can call as many middleware functions as we want.
+router.put("/:id", validateHubData(), validateHubId(), (req, res) => {
+  hubs.update(req.hub.id, req.body)
     .then(hub => {
-      res.status(201).json(hub)
+      res.status(200).json(hub)
     })
     .catch(error => {
-      console.log(error)
-      res.status(500).json({
-        message: "Error adding the hub",
-      })
+      next(error)
     })
 })
 
-router.put("/:id", (req, res) => {
-  if (!req.body.name) {
-    return res.status(400).json({ message: "Missing hub name" })
-  }
-
-  hubs.update(req.params.id, req.body)
-    .then(hub => {
-      if (hub) {
-        res.status(200).json(hub)
-      } else {
-        res.status(404).json({ message: "The hub could not be found" })
-      }
+router.delete("/:id", validateHubId(), (req, res) => {
+  hubs.remove(req.hub.id)
+    .then(() => {
+      res.status(200).json({ message: "The hub has been nuked" })
     })
     .catch(error => {
-      console.log(error)
-      res.status(500).json({
-        message: "Error updating the hub",
-      })
-    })
-})
-
-router.delete("/:id", (req, res) => {
-  hubs.remove(req.params.id)
-    .then(count => {
-      if (count > 0) {
-        res.status(200).json({ message: "The hub has been nuked" })
-      } else {
-        res.status(404).json({ message: "The hub could not be found" })
-      }
-    })
-    .catch(error => {
-      console.log(error)
-      res.status(500).json({
-        message: "Error removing the hub",
-      })
+      next(error)
     })
 })
 
